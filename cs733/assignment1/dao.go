@@ -100,7 +100,7 @@ func CAS(fileName string, version int64,  byteCount int, content []byte, timeout
 			
 			return newVersion, ""
 		} else {
-			return 0, "ERR_VERSION "+strconv.FormatInt(file.version, 10)
+			return 0, "ERR_VERSION "+strconv.FormatInt(file.version, 10)+"\r\n"
 		}
 	} else {
 		return 0, "ERR_FILE_NOT_FOUND\r\n" 
