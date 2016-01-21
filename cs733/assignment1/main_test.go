@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"bufio"
 	"sync"
+	"strings"
 )
 
 
@@ -16,7 +17,12 @@ func TestDummy(t *testing.T){
 	go serverMain()
 	time.Sleep(time.Second)
 }
-
+func min(a, b int) int {
+	if a<b {
+		return a
+	} 
+	return b
+}
 
 func TestReadWrites(t *testing.T) {
 	//go serverMain()
@@ -27,7 +33,7 @@ func TestReadWrites(t *testing.T) {
 		return
 	} 
 
-	conn.Write([]byte("write test 4 4\r\ntest\r\n"))
+	conn.Write([]byte("write test 4\r\ntest\r\n"))
 	time.Sleep(1*time.Second)
 	response := make([]byte, 1024)
 	n, _ :=conn.Read(response)
@@ -41,9 +47,14 @@ func TestReadWrites(t *testing.T) {
 	time.Sleep(1*time.Second)
 	n , _ = bufio.NewReader(conn).Read(response) 
 	respGot = string(response[:n])
+	respGotparams := strings.Split(respGot, " ")
 	respExp = "CONTENTS 1 4 4 \r\ntest\r\n"
-	
-	expect(t, respGot, respExp)
+	respExpparams := strings.Split(respExp, " ")
+	for i := 0; i< min(len(respExpparams), len(respGotparams)); i++ {
+		if i != 3 {
+			expect(t, respGotparams[i], respExpparams[i])
+		} 
+	}
 }
 
 func TestCAS(t *testing.T) {
@@ -56,7 +67,7 @@ func TestCAS(t *testing.T) {
 	conn.Write([]byte("cas test 1 "))
 	newContent := []byte("Hello, It's me.")
 	conn.Write(intToBytes(len(newContent)))
-	conn.Write([]byte(" 4\r\n"))
+	conn.Write([]byte(" 100\r\n"))
 	conn.Write(newContent)
 	conn.Write([]byte("\r\n"))
 	
@@ -77,7 +88,7 @@ func TestDelete(t *testing.T) {
 	content := []byte("cont")
 	conn.Write([]byte("write test "))
 	conn.Write([]byte(strconv.Itoa(len(content))))
-	conn.Write([]byte(" 4\r\n"))
+	conn.Write([]byte(" 100\r\n"))
 	conn.Write(content)
 	conn.Write([]byte("\r\n"))
 	time.Sleep(1*time.Second)

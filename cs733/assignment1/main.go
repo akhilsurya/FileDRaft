@@ -37,6 +37,23 @@ func serverMain() {
 }
 
 
+func checkTimeout(quit chan int, fileName string, timeout int) {
+	nanoDur := int64(timeout)*1000000000
+	boom := time.After(time.Duration(nanoDur)*time.Second)
+
+	for {
+		select {
+		case <-boom:
+			Delete(fileName)
+		case <-quit:
+			return
+		default:
+			time.Sleep(50*time.Millisecond)
+		}
+	}
+}
+
+
 func badCommand(conn net.Conn) {
 	_, e := conn.Write([]byte("ERR_CMD_ERR\r\n"))
 	if e == nil {
@@ -70,8 +87,11 @@ func writeReadResponse(conn net.Conn, version int64, byteCount int, timeout int,
 		conn.Write([]byte(" "))
 		conn.Write(intToBytes(byteCount))
 		conn.Write([]byte(" "))
-		conn.Write(intToBytes(timeout))
-		conn.Write([]byte(" \r\n"))
+		if timeout != -1 {
+			conn.Write(intToBytes(timeout))
+			conn.Write([]byte(" "))
+		}
+		conn.Write([]byte("\r\n"))
 		conn.Write(contentRead)
 		conn.Write([]byte("\r\n"))
 

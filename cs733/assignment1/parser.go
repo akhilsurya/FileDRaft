@@ -27,7 +27,7 @@ func ParseWrite(command string) (string, int, int, string)  {
 		if e != nil {
 			return "",0, 0, "ERR_CMD_ERR\r\n"
  		}
-		timeout := 0 // ??
+		timeout := -1 // ??
 		err := ""
 		return fileName, byteCount, timeout,err
 	} else if  len(parameters) == 4 {
@@ -40,7 +40,7 @@ func ParseWrite(command string) (string, int, int, string)  {
 		err := ""
 		return fileName, byteCount, timeout, err
 	} else {
-		return "",0, 0, "ERR_CMD_ERR\r\n" 
+		return "",0, -1, "ERR_CMD_ERR\r\n" 
 	}
 	
 }
@@ -56,11 +56,11 @@ func ParseCAS(command string) (fileName string, version int64, byteCount int, ti
 		if e1 != nil || e2 != nil  {
 			version = 0;
 			byteCount = 0;
-			timeout = 0;
+			timeout = -1;
 			err = "ERR_CMD_ERR\r\n" 
 			return
 		}
-		timeout = 0 
+		timeout = -1
 		err = ""
 
 	} else if  len(parameters) == 5 {
@@ -73,7 +73,7 @@ func ParseCAS(command string) (fileName string, version int64, byteCount int, ti
 		if e1 != nil || e2 != nil || e3 != nil  {
 			version = 0;
 			byteCount = 0;
-			timeout = 0;
+			timeout = -1;
 			err = "ERR_CMD_ERR\r\n" 
 			return
 		}
@@ -82,7 +82,7 @@ func ParseCAS(command string) (fileName string, version int64, byteCount int, ti
 		fileName = "";
 		version = 0;
 		byteCount -= 0;
-		timeout = 0;
+		timeout = -1;
 		err = "ERR_CMD_ERR\r\n" 
 	}
 	return
