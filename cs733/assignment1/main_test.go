@@ -24,6 +24,12 @@ func min(a, b int) int {
 	return b
 }
 
+
+func intToBytes2(n int) []byte {
+	return []byte(strconv.Itoa(n))
+}
+
+
 func TestReadWrites(t *testing.T) {
 	//go serverMain()
 	conn, err := net.DialTCP("tcp", nil, &net.TCPAddr{net.IPv4(127, 0, 0, 1), 8080, ""})
@@ -66,7 +72,7 @@ func TestCAS(t *testing.T) {
 	
 	conn.Write([]byte("cas test 1 "))
 	newContent := []byte("Hello, It's me.")
-	conn.Write(intToBytes(len(newContent)))
+	conn.Write(intToBytes2(len(newContent)))
 	conn.Write([]byte(" 100\r\n"))
 	conn.Write(newContent)
 	conn.Write([]byte("\r\n"))
