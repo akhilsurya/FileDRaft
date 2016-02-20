@@ -167,7 +167,70 @@ func Test2(t *testing.T) {
 	sm.ProcessEvent(VoteRespEv{3, 1, false})
 	expect(t, sm.state, 1)
 	expect(t, sm.term, 1) // term should not have changed
+	// AppendEntries from leader
+	responses = sm.ProcessEvent(AppendEntriesReqEv{0, 1, 0, 0, make([]LogEntry, 0), 0})
+	expected = make([]interface{}, 0)
+	expected = append(expected, Alarm{200})
+	expected = append(expected, Send{0, AppendEntriesRespEv{2, 1, true, 0}})
+	matchResponse(t, expected, responses)
+	// Appending log entries from user, should get comitted
+	content := make([]byte, 4)
+	logEntry := LogEntry{1, content}
+	logsToAdd := make([]LogEntry, 0)
+	logsToAdd = append(logsToAdd, logEntry)
+	responses = sm.ProcessEvent(AppendEntriesReqEv{0, 1, 0, 0, logsToAdd, 1})
+	expected = make([]interface{}, 0)
+	expected = append(expected, Alarm{200})
+	expected = append(expected, LogStore{1, 1, content})
+	expect(t, sm.commitIndex, 1)
+	expect(t, len(sm.log), 2)
+	expected = append(expected, Send{0, AppendEntriesRespEv{2, 1, true, 1}})
+	matchResponse(t, expected, responses)
+	// Out of order heart beat
+	responses = sm.ProcessEvent(AppendEntriesReqEv{0, 1, 0, 0, make([]LogEntry, 0), 1})
+	expected = make([]interface{}, 0)
+	expected = append(expected, Alarm{200})
+	expected = append(expected, Send{0, AppendEntriesRespEv{2,1,true, 1}})
+	matchResponse(t, expected, responses)
+	// timeout and start competing
+	responses = sm.ProcessEvent(TimeoutEv{})
+	expected = make([]interface{}, 0)
+	expected = append(expected, StateStore{2,2})
+	expected = append(expected, Alarm{200})
+	for _, peer := range sm.peers {
+		if peer != 2 {
+			expected = append(expected, Send{peer, VoteReqEv{2, 2, 1, 1}})
+		}
+	}
+	expect(t, sm.state, 2)
+	expect(t, sm.votedFor, 2)
+	matchResponse(t, expected, responses)
+	// Old leader's heart beat reaches
+	responses = sm.ProcessEvent(AppendEntriesReqEv{0, 1, 1, 1, make([]LogEntry, 0), 1})
+	expected = make([]interface{}, 0)
+	expected = append(expected, Send{0, AppendEntriesRespEv{2, 2, false, 0}})
+	matchResponse(t, expected, responses)
+	expect(t, sm.state,2)
 
+}
+/**
+Testing leader only commiting on getting a log entry from current term on majority
+ */
+func Test3(t *testing.T) {
+	sm := initSM(0)
+	sm.state = 3
+	sm.commitIndex = 1
+	sm.matchIndex[1] = 2
+	sm.matchIndex[2] = 2
+	sm.term = 3
+	logOf0 := make([]LogEntry, 0)
+	logOf0 = append(logOf0, LogEntry{0, make([]byte, 0)})
+	logOf0 = append(logOf0, LogEntry{1, make([]byte, 0)})
+	logOf0 = append(logOf0, LogEntry{2, make([]byte, 4)})
+	sm.log = logOf0
+	responses := sm.ProcessEvent(AppendEntriesRespEv{2, 3, true, 2})
+	expected := make([]interface{}, 0)
+	matchResponse(t, expected, responses)
 }
 
 func expect(t *testing.T, a int, b int) {
@@ -266,9 +329,7 @@ func compareAppendEntriesReqEv(e, r AppendEntriesReqEv) bool {
 }
 
 func compareSend(e, r Send) bool {
-
 	if e.peer != r.peer {
-
 		return false
 	} else {
 		switch e.event.(type) {

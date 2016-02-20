@@ -210,9 +210,10 @@ func (sm *StateMachine) handleAppendEntriesReq(ev AppendEntriesReqEv) []interfac
 		} else if ev.term > sm.term {
 			sm.term = ev.term
 			sm.votedFor = -1
+			sm.resetVotes()
 			responses = append(responses, StateStore{ev.term, -1})
 		}
-		responses = append(responses, Alarm{sm.timeout}) // TODO : Correct ?
+		responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)}) // TODO : Correct timing ?
 		responses = append(responses, sm.checkAndUpdateLog(ev.prevLogIndex, ev.prevLogTerm, ev.commitIndex, ev.leader, ev.entries)...)
 	case 2, 3:
 		// Equality not possible in case of leader
