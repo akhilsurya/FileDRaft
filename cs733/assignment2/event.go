@@ -15,8 +15,8 @@ type TimeoutEv struct {
 }
 
 type AppendEntriesReqEv struct {
-	term         int
 	leader       int
+	term         int
 	prevLogIndex int
 	prevLogTerm  int
 	entries      []LogEntry
@@ -24,9 +24,10 @@ type AppendEntriesReqEv struct {
 }
 
 type AppendEntriesRespEv struct {
-	peerId  int
-	term    int
-	success bool
+	peerId      int
+	term        int
+	success     bool
+	matchedTill int
 }
 
 type VoteRespEv struct {

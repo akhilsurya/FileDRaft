@@ -12,7 +12,7 @@ type Commit struct {
 }
 
 type Alarm struct {
-	t int64
+	t int
 }
 
 type LogStore struct {
