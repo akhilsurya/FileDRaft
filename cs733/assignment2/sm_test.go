@@ -6,33 +6,6 @@ import (
 	"testing"
 )
 
-//- Follower responding to append entries
-//	- from leader
-//	- from previous term
-//	- from future term
-//
-//- testing voting
-//	- recentness check
-//	- check satisified look for success
-//	- not repeated voting
-//	- sending request to candidate in same term
-//	- sending request to stale leader
-//	-
-//- leader selection
-//	- majority votes
-//	- majority no votes
-//
-//- propogation
-//	- leader ahead
-//	- follower ahead
-//	- both equal
-//	- term issues
-//
-//-commit
-//	- new leader not commite
-//	- majority commit
-//	- otherside handling commit index
-
 func initSM(id int) StateMachine {
 	initLog := make([]LogEntry, 0)
 	initLog = append(initLog, LogEntry{0, make([]byte, 0)})
