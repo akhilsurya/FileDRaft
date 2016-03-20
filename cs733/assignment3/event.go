@@ -5,33 +5,33 @@ type AppendEv struct {
 }
 
 type VoteReqEv struct {
-	candidateId    int
-	term           int
-	recentLogIndex int
-	recentLogTerm  int
+	CandidateId    int
+	Term           int
+	RecentLogIndex int
+	RecentLogTerm  int
 }
 
 type TimeoutEv struct {
 }
 
 type AppendEntriesReqEv struct {
-	leader       int
-	term         int
-	prevLogIndex int
-	prevLogTerm  int
-	entries      []LogEntry
-	commitIndex  int
+	Leader       int
+	Term         int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []LogEntry
+	CommitIndex  int
 }
 
 type AppendEntriesRespEv struct {
-	peerId      int
-	term        int
-	success     bool
-	matchedTill int
+	PeerId      int
+	Term        int
+	Success     bool
+	MatchedTill int
 }
 
 type VoteRespEv struct {
-	peerId  int
-	term    int
-	success bool
+	PeerId  int
+	Term    int
+	Success bool
 }

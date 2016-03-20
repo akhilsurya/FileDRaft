@@ -2,11 +2,12 @@ package main
 
 import (
 	"math/rand"
+	"fmt"
 )
 
 type LogEntry struct {
-	term    int
-	command []byte
+	Term    int
+	Command []byte
 }
 
 type StateMachine struct {
@@ -21,6 +22,7 @@ type StateMachine struct {
 	commitIndex int
 	timeout     int
 	votes       map[int]int // 0 not vote, 1 voted, -1 denied
+	leaderId int
 }
 
 func random(min, max int) int {
@@ -74,10 +76,10 @@ func (sm *StateMachine) hasLost() bool {
 
 func (sm *StateMachine) propagate() []interface{} {
 	responses := make([]interface{}, 0)
-	for peer := range sm.peers {
+	for _, peer := range sm.peers {
 		if peer != sm.id {
 			prevIndex := sm.nextIndex[peer] - 1
-			event := AppendEntriesReqEv{sm.id, sm.term, prevIndex, sm.log[prevIndex].term, sm.log[prevIndex+1 : len(sm.log)], sm.commitIndex}
+			event := AppendEntriesReqEv{sm.id, sm.term, prevIndex, sm.log[prevIndex].Term, sm.log[prevIndex+1 : len(sm.log)], sm.commitIndex}
 			responses = append(responses, Send{peer, event})
 		}
 	}
@@ -86,21 +88,22 @@ func (sm *StateMachine) propagate() []interface{} {
 
 func (sm *StateMachine) requestVote() []interface{} {
 	responses := make([]interface{}, 0)
-	for peer := range sm.peers {
+	for _, peer := range sm.peers {
 		if peer != sm.id {
-			event := VoteReqEv{sm.id, sm.term, len(sm.log) - 1, sm.log[len(sm.log)-1].term}
+			event := VoteReqEv{sm.id, sm.term, len(sm.log) - 1, sm.log[len(sm.log)-1].Term}
 			responses = append(responses, Send{peer, event})
 		}
 	}
+	fmt.Println("Node ", sm.id, " is requesting for votes")
 	return responses
 }
 
 func (sm *StateMachine) sendHeartBeat() []interface{} {
 	responses := make([]interface{}, 0)
-	for peer := range sm.peers {
+	for _, peer := range sm.peers {
 		if peer != sm.id {
 			prevIndex := sm.nextIndex[peer] - 1
-			event := AppendEntriesReqEv{sm.id, sm.term, prevIndex, sm.log[prevIndex].term, make([]LogEntry, 0), sm.commitIndex}
+			event := AppendEntriesReqEv{sm.id, sm.term, prevIndex, sm.log[prevIndex].Term, make([]LogEntry, 0), sm.commitIndex}
 			responses = append(responses, Send{peer, event})
 		}
 	}
@@ -111,11 +114,11 @@ func (sm *StateMachine) sendHeartBeat() []interface{} {
 
 func (sm *StateMachine) checkAndUpdateLog(prevLogIndex, prevLogTerm, commitIndex, leader int, entries []LogEntry) []interface{} {
 	responses := make([]interface{}, 0)
-	if prevLogIndex > len(sm.log)-1 || sm.log[prevLogIndex].term != prevLogTerm {
+	if prevLogIndex > len(sm.log)-1 || sm.log[prevLogIndex].Term != prevLogTerm {
 		responses = append(responses, Send{leader, AppendEntriesRespEv{sm.id, sm.term, false, 0}}) // matching should not matter
 	} else {
 		// Handle out of order
-		if len(sm.log) >= prevLogIndex+len(entries) && sm.log[len(sm.log)-1].term == sm.term {
+		if len(sm.log) >= prevLogIndex+len(entries) && sm.log[len(sm.log)-1].Term == sm.term {
 			// Must be out of order
 			responses = append(responses, Send{leader, AppendEntriesRespEv{sm.id, sm.term, true, len(sm.log) - 1}})
 			return responses
@@ -123,7 +126,7 @@ func (sm *StateMachine) checkAndUpdateLog(prevLogIndex, prevLogTerm, commitIndex
 		sm.log = sm.log[0 : prevLogIndex+1]
 		sm.log = append(sm.log, entries...)
 		for i := range entries {
-			responses = append(responses, LogStore{prevLogIndex + 1 + i, entries[i].term, entries[i].command})
+			responses = append(responses, LogStore{prevLogIndex + 1 + i, entries[i].Term, entries[i].Command})
 		}
 		if sm.commitIndex < commitIndex {
 			sm.commitIndex = min(commitIndex, len(sm.log)-1)
@@ -144,15 +147,15 @@ func (sm *StateMachine) checkForCommit() []interface{} {
 		var majority int
 		majority = len(sm.peers) / 2 // Excluding self
 		//fmt.Println("Majority is ", majority)
-		for peer := range sm.peers {
+		for _, peer := range sm.peers {
 			if sm.matchIndex[peer] >= curIndex {
 				count++
 			}
 		}
-		if count >= majority && sm.log[curIndex].term == sm.term {
+		if count >= majority && sm.log[curIndex].Term == sm.term {
 			sm.commitIndex = curIndex
 			for i := oldCommitIndex + 1; i <= curIndex; i++ {
-				responses = append(responses, Commit{i, sm.log[i].command, ""})
+				responses = append(responses, Commit{i, sm.log[i].Command, ""})
 			}
 			break
 		} else {
@@ -203,29 +206,30 @@ func (sm *StateMachine) handleAppendEntriesReq(ev AppendEntriesReqEv) []interfac
 	responses := make([]interface{}, 0)
 	switch sm.state {
 	case 1:
-		if ev.term < sm.term {
-			responses = append(responses, Send{ev.leader, AppendEntriesRespEv{sm.id, sm.term, false, 0}})
+		if ev.Term < sm.term {
+			responses = append(responses, Send{ev.Leader, AppendEntriesRespEv{sm.id, sm.term, false, 0}})
 			return responses
-		} else if ev.term > sm.term {
-			sm.term = ev.term
+		} else if ev.Term > sm.term {
+			sm.term = ev.Term
 			sm.votedFor = -1
+			sm.leaderId = ev.Leader
 			sm.resetVotes()
-			responses = append(responses, StateStore{ev.term, -1})
+			responses = append(responses, StateStore{ev.Term, -1})
 		}
 		responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)}) // TODO : Correct timing ?
-		responses = append(responses, sm.checkAndUpdateLog(ev.prevLogIndex, ev.prevLogTerm, ev.commitIndex, ev.leader, ev.entries)...)
+		responses = append(responses, sm.checkAndUpdateLog(ev.PrevLogIndex, ev.PrevLogTerm, ev.CommitIndex, ev.Leader, ev.Entries)...)
 	case 2, 3:
 		// Equality not possible in case of leader
-		if ev.term > sm.term {
+		if ev.Term > sm.term {
 			sm.resetVotes()
-			sm.term = ev.term
+			sm.term = ev.Term
 			sm.votedFor = -1
 			sm.state = 1
-			responses = append(responses, StateStore{ev.term, -1})
+			responses = append(responses, StateStore{ev.Term, -1})
 			responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
-			responses = append(responses, sm.checkAndUpdateLog(ev.prevLogIndex, ev.prevLogTerm, ev.commitIndex, ev.leader, ev.entries)...)
+			responses = append(responses, sm.checkAndUpdateLog(ev.PrevLogIndex, ev.PrevLogTerm, ev.CommitIndex, ev.Leader, ev.Entries)...)
 		} else {
-			responses = append(responses, Send{ev.leader, AppendEntriesRespEv{sm.id, sm.term, false, 0}})
+			responses = append(responses, Send{ev.Leader, AppendEntriesRespEv{sm.id, sm.term, false, 0}})
 		}
 	}
 	return responses
@@ -235,37 +239,38 @@ func (sm *StateMachine) handleAppendEntriesResp(ev AppendEntriesRespEv) []interf
 	responses := make([]interface{}, 0)
 	switch sm.state {
 	case 1:
-		if ev.term > sm.term {
-			sm.term = ev.term
+		if ev.Term > sm.term {
+			sm.term = ev.Term
 			sm.votedFor = -1
 			responses = append(responses, StateStore{sm.term, -1})
 		}
 	case 2:
-		if ev.term > sm.term {
-			sm.term = ev.term
+		if ev.Term > sm.term {
+			sm.term = ev.Term
 			sm.resetVotes()
 			sm.votedFor = -1
 			responses = append(responses, StateStore{sm.term, -1})
 		}
 	case 3:
-		if ev.term < sm.term {
+		if ev.Term < sm.term {
 			// empty
 			return responses
 		}
-		if ev.term > sm.term {
-			sm.term = ev.term
+		if ev.Term > sm.term {
+			sm.term = ev.Term
 			sm.votedFor = -1
 			responses = append(responses, StateStore{sm.term, -1})
 			sm.state = 1
 			sm.resetVotes()
 			sm.votes[sm.id] = 1
+			sm.leaderId = -1
 			return responses
 		}
 
-		if ev.success {
+		if ev.Success {
 			// Should handle out of order delivery
-			sm.matchIndex[ev.peerId] = max(ev.matchedTill, sm.matchIndex[ev.peerId])
-			sm.nextIndex[ev.peerId] = len(sm.log)
+			sm.matchIndex[ev.PeerId] = max(ev.MatchedTill, sm.matchIndex[ev.PeerId])
+			sm.nextIndex[ev.PeerId] = len(sm.log)
 			responses = append(responses, sm.checkForCommit()...)
 		} else {
 			var index int
@@ -273,13 +278,13 @@ func (sm *StateMachine) handleAppendEntriesResp(ev AppendEntriesRespEv) []interf
 			//if ev.< sm.matchIndex[] {
 			//
 			//} else {
-			if sm.nextIndex[ev.peerId] == 1 {
+			if sm.nextIndex[ev.PeerId] == 1 {
 				index = 1
 			} else {
-				sm.nextIndex[ev.peerId]--
-				index = sm.nextIndex[ev.peerId]
+				sm.nextIndex[ev.PeerId]--
+				index = sm.nextIndex[ev.PeerId]
 			}
-			responses = append(responses, Send{ev.peerId, AppendEntriesReqEv{sm.id, sm.term, index - 1, sm.log[index-1].term, sm.log[index:len(sm.log)], sm.commitIndex}})
+			responses = append(responses, Send{ev.PeerId, AppendEntriesReqEv{sm.id, sm.term, index - 1, sm.log[index-1].Term, sm.log[index:len(sm.log)], sm.commitIndex}})
 
 			//}
 		}
@@ -291,42 +296,45 @@ func (sm *StateMachine) handleVoteReq(ev VoteReqEv) []interface{} {
 	responses := make([]interface{}, 0)
 	switch sm.state {
 	case 1:
-		if sm.term > ev.term {
-			responses = append(responses, Send{ev.candidateId, VoteRespEv{sm.id, sm.term, false}})
+		if sm.term > ev.Term {
+			responses = append(responses, Send{ev.CandidateId, VoteRespEv{sm.id, sm.term, false}})
 			return responses
 		}
-		if sm.term < ev.term || (sm.term == ev.term && sm.votedFor == -1) {
-			lastTermV := sm.log[len(sm.log)-1].term
+		if sm.term < ev.Term || (sm.term == ev.Term && sm.votedFor == -1) {
+			lastTermV := sm.log[len(sm.log)-1].Term
 
-			if (lastTermV > ev.recentLogTerm) || (lastTermV == ev.recentLogTerm && len(sm.log)-1 > ev.recentLogIndex) {
-				responses = append(responses, Send{ev.candidateId, VoteRespEv{sm.id, sm.term, false}})
-				if sm.term < ev.term {
-					sm.term = ev.term
+			if (lastTermV > ev.RecentLogTerm) || (lastTermV == ev.RecentLogTerm && len(sm.log)-1 > ev.RecentLogIndex) {
+				responses = append(responses, Send{ev.CandidateId, VoteRespEv{sm.id, sm.term, false}})
+				if sm.term < ev.Term {
+					sm.term = ev.Term
 					sm.votedFor = -1
+					sm.leaderId = -1
 					responses = append(responses, StateStore{sm.term, sm.votedFor})
 				}
 			} else {
-				sm.votedFor = ev.candidateId
-				responses = append(responses, Send{ev.candidateId, VoteRespEv{sm.id, ev.term, true}})
+				fmt.Println("Vote given to ", ev.CandidateId)
+				sm.votedFor = ev.CandidateId
+				responses = append(responses, Send{ev.CandidateId, VoteRespEv{sm.id, ev.Term, true}})
 				responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
-				if sm.term < ev.term {
-					sm.term = ev.term
+				if sm.term < ev.Term {
+					sm.term = ev.Term
 					responses = append(responses, StateStore{sm.term, sm.votedFor})
 				}
 			}
 
 		}
 	case 2, 3:
-		if sm.term < ev.term {
-			sm.term = ev.term
+		if sm.term < ev.Term {
+			sm.term = ev.Term
 			responses = append(responses, Alarm{random(sm.timeout, sm.timeout*2)})
 			sm.resetVotes()
 			sm.votedFor = -1
 			sm.state = 1
+			sm.leaderId = -1
 			responses = append(responses, StateStore{sm.term, sm.votedFor})
 			responses = append(responses, sm.handleVoteReq(ev)...)
 		} else {
-			responses = append(responses, Send{ev.candidateId, VoteRespEv{sm.id, sm.term, false}})
+			responses = append(responses, Send{ev.CandidateId, VoteRespEv{sm.id, sm.term, false}})
 		}
 	}
 	return responses
@@ -336,36 +344,40 @@ func (sm *StateMachine) handleVoteResp(ev VoteRespEv) []interface{} {
 	responses := make([]interface{}, 0)
 	switch sm.state {
 	case 1:
-		if sm.term < ev.term {
-			sm.term = ev.term
+		if sm.term < ev.Term {
+			sm.term = ev.Term
 			sm.votedFor = -1
 			responses = append(responses, StateStore{sm.term, sm.votedFor})
 		}
 	case 2:
-		if sm.term < ev.term {
-			sm.term = ev.term
+		if sm.term < ev.Term {
+			sm.term = ev.Term
 			sm.votedFor = -1
+			sm.leaderId = ev.PeerId
 			sm.resetVotes()
 			responses = append(responses, StateStore{sm.term, sm.votedFor})
 			responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
 			sm.state = 1
-		} else if sm.term == ev.term {
-			if ev.success {
-				sm.votes[ev.peerId] = 1
+		} else if sm.term == ev.Term {
+			if ev.Success {
+				sm.votes[ev.PeerId] = 1
 
 				if sm.hasWon() {
+					fmt.Println(sm.id , " has won ")
+					sm.leaderId = sm.id
 					sm.state = 3
 					leaderLastIndex := len(sm.log)
-					for peer := range sm.peers {
+					for _, peer := range sm.peers {
 						sm.nextIndex[peer] = leaderLastIndex
 						sm.matchIndex[peer] = 0
 					}
 					responses = append(responses, sm.sendHeartBeat()...)
 				}
 			} else {
-				sm.votes[ev.peerId] = -1
+				sm.votes[ev.PeerId] = -1
 
 				if sm.hasLost() {
+					fmt.Println(sm.id, " has lost")
 					sm.state = 1
 					sm.resetVotes()
 					// term and votedFor remain same
@@ -377,9 +389,10 @@ func (sm *StateMachine) handleVoteResp(ev VoteRespEv) []interface{} {
 		}
 
 	case 3:
-		if sm.term < ev.term {
-			sm.term = ev.term
+		if sm.term < ev.Term {
+			sm.term = ev.Term
 			sm.votedFor = -1
+			sm.leaderId = -1
 			sm.resetVotes()
 			responses = append(responses, StateStore{sm.term, sm.votedFor})
 			responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
@@ -413,11 +426,4 @@ func (sm *StateMachine) ProcessEvent(ev interface{}) []interface{} {
 		responses = sm.handleVoteResp(cmd)
 	}
 	return responses
-}
-
-func main() {
-	rand.Seed(99)
-	var sm StateMachine
-
-	sm.ProcessEvent(AppendEntriesReqEv{term: 10, prevLogIndex: 100, prevLogTerm: 3})
 }

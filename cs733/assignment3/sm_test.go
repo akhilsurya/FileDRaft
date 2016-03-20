@@ -14,7 +14,7 @@ func initSM(id int) StateMachine {
 		peers = append(peers, i)
 	}
 	return StateMachine{
-		id, peers, 0, -1, 1, initLog, make(map[int]int), make(map[int]int), 0, 200, make(map[int]int),
+		id, peers, 0, -1, 1, initLog, make(map[int]int), make(map[int]int), 0, 200, make(map[int]int), -1,
 	}
 }
 
@@ -163,12 +163,12 @@ func Test2(t *testing.T) {
 	responses = sm.ProcessEvent(AppendEntriesReqEv{0, 1, 0, 0, make([]LogEntry, 0), 1})
 	expected = make([]interface{}, 0)
 	expected = append(expected, Alarm{200})
-	expected = append(expected, Send{0, AppendEntriesRespEv{2,1,true, 1}})
+	expected = append(expected, Send{0, AppendEntriesRespEv{2, 1, true, 1}})
 	matchResponse(t, expected, responses)
 	// timeout and start competing
 	responses = sm.ProcessEvent(TimeoutEv{})
 	expected = make([]interface{}, 0)
-	expected = append(expected, StateStore{2,2})
+	expected = append(expected, StateStore{2, 2})
 	expected = append(expected, Alarm{200})
 	for _, peer := range sm.peers {
 		if peer != 2 {
@@ -183,12 +183,13 @@ func Test2(t *testing.T) {
 	expected = make([]interface{}, 0)
 	expected = append(expected, Send{0, AppendEntriesRespEv{2, 2, false, 0}})
 	matchResponse(t, expected, responses)
-	expect(t, sm.state,2)
+	expect(t, sm.state, 2)
 
 }
+
 /**
 Testing leader only commiting on getting a log entry from current term on majority
- */
+*/
 func Test3(t *testing.T) {
 	sm := initSM(0)
 	sm.state = 3
@@ -283,7 +284,7 @@ func matchResponse(t *testing.T, expected []interface{}, responses []interface{}
 func compareLogs(a, b []LogEntry) bool {
 	if len(a) == len(b) {
 		for i := range a {
-			if a[i].term != b[i].term || !bytes.Equal(a[i].command, b[i].command) {
+			if a[i].Term != b[i].Term || !bytes.Equal(a[i].Command, b[i].Command) {
 				return false
 			}
 		}
@@ -295,7 +296,7 @@ func compareLogs(a, b []LogEntry) bool {
 }
 
 func compareAppendEntriesReqEv(e, r AppendEntriesReqEv) bool {
-	if e.leader != r.leader || e.term != r.term || e.commitIndex != r.commitIndex || e.prevLogIndex != r.prevLogIndex || e.prevLogTerm != r.prevLogTerm || !compareLogs(e.entries, r.entries) {
+	if e.Leader != r.Leader || e.Term != r.Term || e.CommitIndex != r.CommitIndex || e.PrevLogIndex != r.PrevLogIndex || e.PrevLogTerm != r.PrevLogTerm || !compareLogs(e.Entries, r.Entries) {
 		return false
 	}
 	return true
