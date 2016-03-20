@@ -7,7 +7,16 @@ import (
 	"time"
 	"math/rand"
 	"bytes"
+	"os"
+	"path/filepath"
 )
+
+func cleanUp() {
+	removeContents("logs")
+	for i:= 1; i <6; i++ {
+		os.Remove(strconv.Itoa(i*100)+"_state")
+	}
+}
 
 func initRaft() []Node {
 	rand.Seed(4)
@@ -29,29 +38,58 @@ func initRaft() []Node {
 	}
 	return rafts
 }
+// Ref : http://stackoverflow.com/questions/33450980/golang-remove-all-contents-of-a-directory
+func removeContents(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	names, err := d.Readdirnames(-1)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		err = os.RemoveAll(filepath.Join(dir, name))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-func TestBasic(t *testing.T) {
+// Send a message to the leader and check for commit
+// Also leader going down and someone else getting elected
+func TestRaft1(t *testing.T) {
+	cleanUp()
 	rafts := initRaft()
 	time.Sleep(7*time.Second)
 	fmt.Println("Done sleeping1")
 	leader := -1
+	leaderIndex := -1
 	for i :=0; i< 5; i++ {
-		if rafts[i].LeaderId() != -1 {
+		if rafts[i].LeaderId() != -1 && leader == -1 {
 			leader = rafts[i].LeaderId()
-			fmt.Printf("Found leader : %d", (i+1)*100)
+			leaderIndex = i
+			fmt.Printf("Found leader : %d\n", (i+1)*100)
 		}
 	}
 	fmt.Println("Leader is ", leader)
-	rafts[0].Append([]byte("Testing"))
-	resp := <-rafts[0].CommitChannel()
-	expect(t, resp.Index, 1)
-	matchBytes(t, []byte("Testing"), resp.Data)
-	fmt.Println("first part of test done")
-	rafts[0].Shutdown()
+	rafts[leaderIndex].Append([]byte("Testing"))
+	resp := <-rafts[leaderIndex].CommitChannel()
+	expect(t, resp.Index, 0)
+	err, found := rafts[leaderIndex].Get(0)
+	expectTruth(t, err == nil)
+	matchBytes(t, found, resp.Data)
+	time.Sleep(time.Second)
+	// Should have propagated
+	otherNodeIndex := 4
+	err, found = rafts[otherNodeIndex].Get(0)
+	matchBytes(t, found, resp.Data)
+	rafts[leaderIndex].Shutdown()
 	time.Sleep(7*time.Second)
-	fmt.Println("Done sleeping2")
+
 	leader = -1
-	// Since 0 is shutdown
 	for i := 1; i<5; i++ {
 		if rafts[i].LeaderId() != -1  {
 			leader = rafts[i].LeaderId()
@@ -64,8 +102,22 @@ func TestBasic(t *testing.T) {
 	}
 }
 
+
+
 func matchBytes(t *testing.T, a []byte, b []byte) {
 	if !bytes.Equal(a, b) {
 		t.Error(fmt.Sprintf("Expected %#v, found %#v", a, b))
+	}
+}
+
+func assertNotEqual(t *testing.T, a int, b int) {
+	if a == b{
+		t.Error(fmt.Sprintf("Expected %#v and  found %#v same integer", a, b))
+	}
+}
+
+func expectTruth(t *testing.T, b bool) {
+	if !b {
+		t.Error(fmt.Sprintf("Expected condition not satisfied"))
 	}
 }

@@ -193,6 +193,7 @@ func (sm *StateMachine) handleTimeout(ev TimeoutEv) []interface{} {
 		sm.resetVotes()
 		sm.votes[sm.id] = 1
 		sm.state = 2
+		sm.leaderId = -1
 		responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
 		responses = append(responses, sm.requestVote()...)
 	case 3:
@@ -216,15 +217,17 @@ func (sm *StateMachine) handleAppendEntriesReq(ev AppendEntriesReqEv) []interfac
 			sm.resetVotes()
 			responses = append(responses, StateStore{ev.Term, -1})
 		}
+		sm.leaderId = ev.Leader
 		responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)}) // TODO : Correct timing ?
 		responses = append(responses, sm.checkAndUpdateLog(ev.PrevLogIndex, ev.PrevLogTerm, ev.CommitIndex, ev.Leader, ev.Entries)...)
 	case 2, 3:
 		// Equality not possible in case of leader
-		if ev.Term > sm.term {
+		if ev.Term >= sm.term {
 			sm.resetVotes()
 			sm.term = ev.Term
 			sm.votedFor = -1
 			sm.state = 1
+			sm.leaderId = ev.Leader
 			responses = append(responses, StateStore{ev.Term, -1})
 			responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
 			responses = append(responses, sm.checkAndUpdateLog(ev.PrevLogIndex, ev.PrevLogTerm, ev.CommitIndex, ev.Leader, ev.Entries)...)
@@ -242,6 +245,7 @@ func (sm *StateMachine) handleAppendEntriesResp(ev AppendEntriesRespEv) []interf
 		if ev.Term > sm.term {
 			sm.term = ev.Term
 			sm.votedFor = -1
+			sm.leaderId = -1
 			responses = append(responses, StateStore{sm.term, -1})
 		}
 	case 2:
@@ -249,6 +253,7 @@ func (sm *StateMachine) handleAppendEntriesResp(ev AppendEntriesRespEv) []interf
 			sm.term = ev.Term
 			sm.resetVotes()
 			sm.votedFor = -1
+			sm.leaderId = -1
 			responses = append(responses, StateStore{sm.term, -1})
 		}
 	case 3:
@@ -347,13 +352,14 @@ func (sm *StateMachine) handleVoteResp(ev VoteRespEv) []interface{} {
 		if sm.term < ev.Term {
 			sm.term = ev.Term
 			sm.votedFor = -1
+			sm.leaderId = -1
 			responses = append(responses, StateStore{sm.term, sm.votedFor})
 		}
 	case 2:
 		if sm.term < ev.Term {
 			sm.term = ev.Term
 			sm.votedFor = -1
-			sm.leaderId = ev.PeerId
+			sm.leaderId = -1
 			sm.resetVotes()
 			responses = append(responses, StateStore{sm.term, sm.votedFor})
 			responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})

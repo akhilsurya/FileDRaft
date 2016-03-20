@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"time"
 	"fmt"
+	"os"
+"strings"
 )
 
 type CommitInfo struct {
@@ -79,10 +81,17 @@ func (rn *RaftNode) Shutdown(){
 	//
 	rn.lg.Close()
 	rn.server.Close()
+	fmt.Println(rn.Id(), " : Server is closed now? : ", rn.server.IsClosed())
 	rn.timer.Stop()
 	fmt.Println("Shutting down : ", rn.Id())
 	//rn.shutDownChan <- 1
 	fmt.Println("Shut down : ", rn.Id())
+}
+
+func (rn *RaftNode) Get(i int) (error, []byte) {
+	content, err := rn.lg.Get(int64(i))
+	logEntry := content.(LogEntry)
+	return err, logEntry.Command
 }
 
 func NetToPeersConfig(addresses []NetConfig) []cluster.PeerConfig {
@@ -104,10 +113,22 @@ func getPeers(peerConfigs []NetConfig) []int {
 
 
 func (rn *RaftNode) Append(content []byte) {
+	fmt.Println("New request from client")
 	ev := AppendEv{content}
 	// Expect error in Commit response if this node isn't leader
 	rn.eventChannel <- ev // Best part of Go :)
 }
+
+func readState(id int) (term int, votedFor int) {
+	// Assumes already exists
+	content, _ := ioutil.ReadFile(strconv.Itoa(id)+"_state")
+	c := string(content)
+	fields := strings.Fields(c)
+	term, _ = strconv.Atoi(fields[0])
+	votedFor, _ = strconv.Atoi(fields[1])
+	return term, votedFor
+}
+
 
 func New(nodeConfig Config) (Node, error) {
 	clusterConfig := cluster.Config{Peers: NetToPeersConfig(nodeConfig.cluster), InboxSize: 50, OutboxSize: 50}
@@ -124,14 +145,24 @@ func New(nodeConfig Config) (Node, error) {
 
 	commitChannel := make(chan CommitInfo)
 	eventChannel := make(chan interface{})
-
 	initLog := make([]LogEntry, 0)
 	initLog = append(initLog, LogEntry{0, make([]byte, 0)})
-	sm := StateMachine{nodeConfig.Id, getPeers(nodeConfig.cluster), 0,
-		-1, 1, initLog, make(map[int]int), make(map[int]int),
+	votedFor := -1
+	term := 0
+	_, err = os.Stat(strconv.Itoa(nodeConfig.Id)+"_state")
+	if err == nil {
+		// State file already exists, so restart read vars from it
+		term, votedFor = readState(nodeConfig.Id)
+		for i:= 0; int64(i) <lg.GetLastIndex(); i++ {
+			entry, _ := lg.Get(int64(i))
+			initLog = append(initLog, entry.(LogEntry))
+		}
+	}
+
+
+	sm := StateMachine{nodeConfig.Id, getPeers(nodeConfig.cluster), term,
+		votedFor, 1, initLog, make(map[int]int), make(map[int]int),
 		0, nodeConfig.ElectionTimeout, make(map[int]int), -1}
-
-
 
 	rn := RaftNode{sm: sm, server: server, lg: lg, commitChannel:commitChannel, eventChannel: eventChannel}
 	timerFunc := func(eventChannel chan interface{}) func(){
@@ -165,6 +196,7 @@ func (rn *RaftNode) handleSMResponses(resp []interface{}) {
 	fmt.Println("Node ", rn.Id(), " processing ", len(resp), " responses")
 	for _, ev := range resp {
 		fmt.Println(rn.Id(), " : ", ev)
+		fmt.Println(rn.Id() , " : cur leader : ", rn.LeaderId())
 		switch ev.(type) {
 		case Send:
 			fmt.Println("Send request from : ", rn.Id())
@@ -181,9 +213,10 @@ func (rn *RaftNode) handleSMResponses(resp []interface{}) {
 			comm := ev.(Commit)
 			var cm CommitInfo
 			if comm.err != "" {
-				cm = CommitInfo{Data: comm.data, Index: comm.index, Err: errors.New(comm.err)}
+				// -1 to match the ignore the dummy
+				cm = CommitInfo{Data: comm.data, Index: comm.index-1, Err: errors.New(comm.err)}
 			} else {
-				cm = CommitInfo{Data: comm.data, Index: comm.index, Err: nil}
+				cm = CommitInfo{Data: comm.data, Index: comm.index-1, Err: nil}
 			}
 
 			rn.commitChannel <- cm
@@ -194,16 +227,35 @@ func (rn *RaftNode) handleSMResponses(resp []interface{}) {
 			fmt.Println("Reset done ")
 		case LogStore:
 			logRequest := ev.(LogStore)
+			fmt.Println("Trying to store ", logRequest.data)
 			lastIndex := rn.lg.GetLastIndex()
+			fmt.Println(rn.Id(), " : Last Index before inserting is " ,lastIndex)
 			curIndex := logRequest.index - 1 // To account for dummy
+			fmt.Println("LAST INDEX +1 : ", lastIndex+1, " CURINDEX : ", curIndex )
 			if lastIndex+1 == int64(curIndex) {
+				fmt.Println("Should be coming here to save")
 				rn.lg.Append(LogEntry{logRequest.term, logRequest.data})
+				fmt.Println("Last Index after inserting is " , rn.lg.GetLastIndex())
 			} else if lastIndex+1 > int64(curIndex) {
 				rn.lg.TruncateToEnd(int64(curIndex))
 				rn.lg.Append(LogEntry{logRequest.term, logRequest.data})
 			} else {
-				// Possible ?
-				panic(errors.New("Bad index?"))
+				// TODO :
+				for  {
+					lastIndex = rn.lg.GetLastIndex()
+					if lastIndex+1 == int64(curIndex) {
+						fmt.Println("Broken out ")
+						fmt.Println("Should be coming here to save")
+						rn.lg.Append(LogEntry{logRequest.term, logRequest.data})
+						fmt.Println("Last Index after inserting is " , rn.lg.GetLastIndex())
+						continue
+					} else {
+						fmt.Println(rn.Id(), " : Waiting for others : ", curIndex, " , ", lastIndex)
+						time.Sleep(10*time.Millisecond)
+					}
+
+				}
+
 			}
 		case StateStore:
 			state := ev.(StateStore)
