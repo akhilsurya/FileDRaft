@@ -4,7 +4,7 @@ package fs
 // (without command-line parsing or network handling).
 // fs.ProcessMsg is called with an input Msg, and the reply Msg is
 // matched against an expected template.
-//
+// 
 // The same tests are replicated in ../rpc_test, which is more of an
 // end-to-end test
 
@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 )
+
 
 func expect(t *testing.T, response *Msg, expected *Msg, errstr string) {
 	ok := true

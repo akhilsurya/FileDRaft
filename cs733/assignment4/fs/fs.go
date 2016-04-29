@@ -1,7 +1,7 @@
 package fs
 
 import (
-	_ "fmt"
+_	"fmt"
 	"sync"
 	"time"
 )
@@ -64,9 +64,10 @@ func processRead(msg *Msg) *Msg {
 			Numbytes: len(fi.contents),
 			Exptime:  remainingTime,
 			Version:  fi.version,
+			ClientID: msg.ClientID,
 		}
 	} else {
-		return &Msg{Kind: 'F'} // file not found
+		return &Msg{Kind: 'F', ClientID:msg.ClientID} // file not found
 	}
 }
 
@@ -99,8 +100,9 @@ func internalWrite(msg *Msg) *Msg {
 	}
 	fi.absexptime = absexptime
 	fs.dir[msg.Filename] = fi
-
-	return ok(gversion)
+	reply := ok(gversion)
+	reply.ClientID = msg.ClientID
+	return reply
 }
 
 func processWrite(msg *Msg) *Msg {
@@ -115,7 +117,7 @@ func processCas(msg *Msg) *Msg {
 
 	if fi := fs.dir[msg.Filename]; fi != nil {
 		if msg.Version != fi.version {
-			return &Msg{Kind: 'V', Version: fi.version}
+			return &Msg{Kind: 'V', Version: fi.version, ClientID: msg.ClientID}
 		}
 	}
 	return internalWrite(msg)
@@ -132,9 +134,11 @@ func processDelete(msg *Msg) *Msg {
 		}
 		fi.cancelTimer()
 		delete(fs.dir, msg.Filename)
-		return ok(0)
+		reply :=  ok(0)
+		reply.ClientID = msg.ClientID
+		return reply
 	} else {
-		return &Msg{Kind: 'F'} // file not found
+		return &Msg{Kind: 'F', ClientID:msg.ClientID} // file not found
 	}
 
 }

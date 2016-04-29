@@ -47,20 +47,21 @@ func TestMsg_InvalidMsg(t *testing.T) {
 		t.Fatal("Expected Failure on Invalid Msg")
 	}
 
+	
 }
 
 func TestMsg_Write(t *testing.T) {
 	r := mkReader("write foobar 3\r\nabc\r\n")
 	msg, msgerr, fatalerr := GetMsg(r)
 
-	msgExpect(t, msg, &Msg{Kind: 'w', Filename: "foobar", Contents: []byte("abc")}, msgerr, fatalerr)
+	msgExpect(t, msg, &Msg{Kind: 'w', Filename:"foobar", Contents: []byte("abc")}, msgerr, fatalerr)
 }
 
 func TestMsg_WriteNoExp(t *testing.T) {
 	str := "\r\n\r\n\r\n\r\n\r\n" // contents
 	r := mkReader(fmt.Sprintf("write foobar %d 20\r\n", len(str)) + str + "\r\n")
 	msg, msgerr, fatalerr := GetMsg(r)
-	msgExpect(t, msg, &Msg{Kind: 'w', Filename: "foobar", Exptime: 20, Contents: []byte(str)}, msgerr, fatalerr)
+	msgExpect(t, msg, &Msg{Kind:'w', Filename: "foobar", Exptime: 20, Contents: []byte(str)}, msgerr, fatalerr)
 }
 
 func TestMsg_CasExpiry(t *testing.T) {
@@ -73,11 +74,11 @@ func TestMsg_CasExpiry(t *testing.T) {
 	msg, msgerr, fatalerr := GetMsg(r)
 	msgExpect(t, msg,
 		&Msg{
-			Kind:     'c',
+			Kind: 'c',
 			Filename: "foobar",
-			Version:  version,
+			Version: version,
 			Numbytes: len(contents),
-			Exptime:  exptime,
+			Exptime: exptime,
 		}, msgerr, fatalerr)
 }
 
@@ -100,7 +101,7 @@ func TestMsg_RecoverableErrors(t *testing.T) {
 	}
 
 	checkerr("write foobar 3 dummy\r\nabc\r\n") //  'dummy' in place of exptime
-	checkerr("cas foobar ver 3 \r\nabc\r\n")    // 'ver' in place of version
+	checkerr("cas foobar ver 3 \r\nabc\r\n") // 'ver' in place of version
 }
 
 func TestMsg_UnrecoverableErrors(t *testing.T) {
@@ -127,7 +128,7 @@ func TestMsg_UnrecoverableErrors(t *testing.T) {
 }
 
 func TestMsg_Responses(t *testing.T) {
-	// CONTENTS response
+	// CONTENTS response 
 	version := 100
 	contents := "\x00\r\n\x01\r\r\n"
 	exptime := 10
@@ -135,26 +136,27 @@ func TestMsg_Responses(t *testing.T) {
 	r := mkReader(msgstr)
 	msg, msgerr, fatalerr := GetMsg(r)
 	msgExpect(t, msg,
-		&Msg{Kind: 'C', Contents: []byte(contents),
+		&Msg{Kind:'C', Contents: []byte(contents),
 			Numbytes: len(contents), Exptime: exptime, Version: version},
 		msgerr, fatalerr)
+
 
 	// ERR RESPONSES
 	r = mkReader("ERR_VERSION 203\r\n")
 	msg, msgerr, fatalerr = GetMsg(r)
-	msgExpect(t, msg, &Msg{Kind: 'V', Version: version}, msgerr, fatalerr)
+	msgExpect(t, msg, &Msg{Kind:'V', Version: version}, msgerr, fatalerr)
 
 	r = mkReader("ERR_CMD_ERR\r\n")
 	msg, msgerr, fatalerr = GetMsg(r)
-	msgExpect(t, msg, &Msg{Kind: 'M'}, msgerr, fatalerr)
+	msgExpect(t, msg, &Msg{Kind:'M'}, msgerr, fatalerr)
 
 	r = mkReader("ERR_INTERNAL\r\n")
 	msg, msgerr, fatalerr = GetMsg(r)
-	msgExpect(t, msg, &Msg{Kind: 'I'}, msgerr, fatalerr)
+	msgExpect(t, msg, &Msg{Kind:'I'}, msgerr, fatalerr)
 
 	r = mkReader("ERR_FILE_NOT_FOUND\r\n")
 	msg, msgerr, fatalerr = GetMsg(r)
-	msgExpect(t, msg, &Msg{Kind: 'F'}, msgerr, fatalerr)
+	msgExpect(t, msg, &Msg{Kind:'F'}, msgerr, fatalerr)
 }
 
 func TestMsg_MultipleCmds(t *testing.T) {
