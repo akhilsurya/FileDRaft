@@ -1,8 +1,9 @@
 package main
 
 import (
-	"math/rand"
 	logger "log"
+	"math/rand"
+	"fmt"
 )
 
 type LogEntry struct {
@@ -94,7 +95,7 @@ func (sm *StateMachine) requestVote() []interface{} {
 			responses = append(responses, Send{peer, event})
 		}
 	}
-	logger.Println("Node ", sm.id, " is requesting for votes")
+	logger.Println(sm.id, " :  Requesting for votes")
 	return responses
 }
 
@@ -265,22 +266,21 @@ func (sm *StateMachine) handleAppendEntriesResp(ev AppendEntriesRespEv) []interf
 			sm.term = ev.Term
 			sm.votedFor = -1
 			responses = append(responses, StateStore{sm.term, -1})
+			responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
 			sm.state = 1
 			sm.resetVotes()
-			sm.votes[sm.id] = 1
 			sm.leaderId = -1
 			return responses
 		}
 
 		if ev.Success {
 			// Should handle out of order delivery
-			sm.matchIndex[ev.PeerId] = max(ev.MatchedTill, sm.matchIndex[ev.PeerId])
+			//sm.matchIndex[ev.PeerId] = max(ev.MatchedTill, sm.matchIndex[ev.PeerId])
+			sm.matchIndex[ev.PeerId] = ev.MatchedTill
 			sm.nextIndex[ev.PeerId] = len(sm.log)
 			responses = append(responses, sm.checkForCommit()...)
 		} else {
 			var index int
-			// TODO : Handle out of order delivery
-
 			if sm.nextIndex[ev.PeerId] == 1 {
 				index = 1
 			} else {
@@ -315,14 +315,16 @@ func (sm *StateMachine) handleVoteReq(ev VoteReqEv) []interface{} {
 					responses = append(responses, StateStore{sm.term, sm.votedFor})
 				}
 			} else {
-				logger.Println("Vote given to ", ev.CandidateId)
+				logger.Println(sm.id, " : Vote given to ", ev.CandidateId)
 				sm.votedFor = ev.CandidateId
 				responses = append(responses, Send{ev.CandidateId, VoteRespEv{sm.id, ev.Term, true}})
 				responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
 				if sm.term < ev.Term {
 					sm.term = ev.Term
 					responses = append(responses, StateStore{sm.term, sm.votedFor})
+					return responses
 				}
+				responses = append(responses, StateStore{sm.term, sm.votedFor})
 			}
 
 		}
@@ -367,7 +369,7 @@ func (sm *StateMachine) handleVoteResp(ev VoteRespEv) []interface{} {
 				sm.votes[ev.PeerId] = 1
 
 				if sm.hasWon() {
-					logger.Println(sm.id, " : ", sm.id, " has won ")
+					fmt.Println(sm.id, " : ", sm.id, " has won ")
 					sm.leaderId = sm.id
 					sm.state = 3
 					leaderLastIndex := len(sm.log)

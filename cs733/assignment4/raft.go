@@ -3,12 +3,13 @@ package main
 import (
 	"encoding/gob"
 	"errors"
+	_ "fmt"
 	"github.com/cs733-iitb/cluster"
 	"github.com/cs733-iitb/log"
 	"io/ioutil"
+	logger "log"
 	"math/rand"
 	"os"
-	logger "log"
 	"strconv"
 	"strings"
 	"time"
@@ -56,8 +57,8 @@ type RaftNode struct {
 	lg            *log.Log
 	commitChannel chan CommitInfo
 	eventChannel  chan interface{}
-	timer         *time.Timer // Send on this channel to reset timer
-	shutDownChan  chan int    // Send something to shut the node down
+	timer         *time.Timer
+	shutDownChan  chan int // Send something to shut the node down
 }
 
 func (rn *RaftNode) CommitChannel() chan CommitInfo {
@@ -109,7 +110,7 @@ func getPeers(peerConfigs []NetConfig) []int {
 }
 
 func (rn *RaftNode) Append(content []byte) {
-	logger.Println("New request from client")
+	logger.Println(rn.Id(), " : New request from client")
 	ev := AppendEv{content}
 	// Expect error in Commit response if this node isn't leader
 	rn.eventChannel <- ev // Best part of Go :)
@@ -171,7 +172,7 @@ func New(nodeConfig Config) (Node, error) {
 			rn.eventChannel <- TimeoutEv{}
 		}
 	}
-	rn.timer = time.AfterFunc(time.Duration(random(sm.timeout, 2*sm.timeout)), timerFunc(rn.eventChannel))
+	rn.timer = time.AfterFunc(time.Duration(random(sm.timeout, 2*sm.timeout))*time.Millisecond, timerFunc(rn.eventChannel))
 
 	gob.Register(AppendEntriesReqEv{})
 	gob.Register(AppendEntriesRespEv{})
@@ -189,28 +190,29 @@ func (rn *RaftNode) saveState(state StateStore) error {
 
 func (rn *RaftNode) resetTimer(timeout int) {
 	rn.timer.Reset(time.Duration(timeout) * time.Millisecond)
-	logger.Println("Resetting timer for : ", rn.sm.id)
 	return
 }
 
 func (rn *RaftNode) handleSMResponses(resp []interface{}) {
-	logger.Println("Node ", rn.Id(), " processing ", len(resp), " responses")
+	//logger.Println(rn.Id(), " : Processing ", len(resp), " responses")
 	for _, ev := range resp {
-		logger.Println(rn.Id(), " : ", ev)
+		//logger.Println(rn.Id(), " : ", ev)
 		switch ev.(type) {
 		case Send:
-			logger.Println("Send request from : ", rn.Id())
+			//logger.Println(rn.Id(), " : Send request from : ", rn.Id())
 			sendRequest := ev.(Send)
-			logger.Println("Sending message to ", sendRequest.peer)
+			//logger.Println(rn.Id(), " : Sending message to ", sendRequest.peer)
 			if !rn.server.IsClosed() {
 				rn.server.Outbox() <- &cluster.Envelope{Pid: sendRequest.peer, Msg: sendRequest.event}
 			} else {
-				// TODO :
+				// TODO : Discuss
+				//logger.Println(rn.Id(), " : Reached a TODO")
 				return
 			}
 
 		case Commit:
 			comm := ev.(Commit)
+
 			var cm CommitInfo
 			if comm.err != "" {
 				// -1 to match the ignore the dummy
@@ -221,50 +223,35 @@ func (rn *RaftNode) handleSMResponses(resp []interface{}) {
 
 			rn.commitChannel <- cm
 		case Alarm:
-			logger.Println("Reset timer request from ", rn.Id())
 			alarm := ev.(Alarm)
 			rn.resetTimer(alarm.t)
-			logger.Println("Reset done ")
+			//logger.Println(rn.Id(), " : Timer reset done ")
 		case LogStore:
 			logRequest := ev.(LogStore)
-			logger.Println("Trying to store ", logRequest.data)
+			//logger.Println(rn.Id() , " : Trying to store ", string(logRequest.data))
 			lastIndex := rn.lg.GetLastIndex()
 			logger.Println(rn.Id(), " : Last Index before inserting is ", lastIndex)
 			curIndex := logRequest.index - 1 // To account for dummy
-			logger.Println("LAST INDEX +1 : ", lastIndex+1, " CURINDEX : ", curIndex)
+			logger.Println(rn.Id(), " : last index +1 : ", lastIndex+1, " cur index : ", curIndex)
 			if lastIndex+1 == int64(curIndex) {
-				logger.Println("Should be coming here to save")
 				rn.lg.Append(LogEntry{logRequest.term, logRequest.data})
-				logger.Println("Last Index after inserting is ", rn.lg.GetLastIndex())
+				logger.Println(rn.Id(), " : Last Index after inserting is ", rn.lg.GetLastIndex())
 			} else if lastIndex+1 > int64(curIndex) {
+				logger.Println(rn.Id(), " : Truncating to append")
+
 				rn.lg.TruncateToEnd(int64(curIndex))
 				rn.lg.Append(LogEntry{logRequest.term, logRequest.data})
 			} else {
-				// TODO :
-				for {
-					lastIndex = rn.lg.GetLastIndex()
-					if lastIndex+1 == int64(curIndex) {
-						logger.Println("Broken out ")
-						logger.Println("Should be coming here to save")
-						rn.lg.Append(LogEntry{logRequest.term, logRequest.data})
-						logger.Println("Last Index after inserting is ", rn.lg.GetLastIndex())
-						continue
-					} else {
-						logger.Println(rn.Id(), " : Waiting for others : ", curIndex, " , ", lastIndex)
-						time.Sleep(10 * time.Millisecond)
-					}
-
-				}
-
+				logger.Println(rn.Id(), " : Reached a NO ENTRY in LogStore")
 			}
 		case StateStore:
 			state := ev.(StateStore)
 			err := rn.saveState(state)
 			if err != nil {
-				logger.Println("Unexpected error while saving")
+				logger.Println(rn.Id(), " : Unexpected error while saving")
 				// TODO : shut down ?
 			}
-			logger.Println("State store done for", rn.Id())
+			logger.Println(rn.Id(), " : State store done")
 		default:
 			logger.Println("Unknown response from state machine")
 		}
@@ -276,12 +263,12 @@ func (rn *RaftNode) ProcessEvents() {
 		select {
 		case ev, ok := <-rn.eventChannel:
 			if ok {
-				logger.Println("New event in chanel of ", rn.sm.id)
+				logger.Println(rn.Id(),  " : New event in channel")
 				resp := rn.sm.ProcessEvent(ev)
-				logger.Println("Got them responses says : ", rn.sm.id)
-				go rn.handleSMResponses(resp)
+				//logger.Println(rn.Id(), " : Got responses" )
+				rn.handleSMResponses(resp)
 			} else {
-				logger.Println("Stopped processing on ", rn.Id())
+				logger.Println(rn.Id(), " : Stopped processing" )
 				return
 			}
 
@@ -292,7 +279,7 @@ func (rn *RaftNode) ProcessEvents() {
 				resp := rn.sm.ProcessEvent(ev)
 				rn.handleSMResponses(resp)
 			} else {
-				logger.Println("Stopped processing on ", rn.Id())
+				logger.Println(rn.Id(), " : Stopped processing")
 				return
 			}
 
