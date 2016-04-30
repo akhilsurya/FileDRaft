@@ -419,6 +419,27 @@ func PTestRPC_ConcurrentCas(t *testing.T) {
 	}
 }
 
+
+func retry(t *testing.T, client ) {
+	for {
+		cl := mkClient(t, servers[400].addr+":"+strconv.Itoa(servers[400].port))
+
+		for {
+			m, _ := cl.read("NO_FILE")
+			if m.Kind == 'L' {
+				fmt.Println("Leader redirection")
+				// Redirect URL
+				url := string(m.Contents)
+				cl = mkClient(t, )
+			} else if m.Kind == 'F' {
+				// This is the leader
+				return servers[400].addr+":"+strconv.Itoa(servers[400].port)
+			}
+			time.Sleep(200*time.Millisecond)
+		}
+	}
+}
+
 //----------------------------------------------------------------------
 // Utility functions
 
