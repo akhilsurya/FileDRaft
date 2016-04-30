@@ -10,8 +10,8 @@ The files can be made to expire after a given amount of time specified during wr
 ### Sample Usage
 
 ``` sh
-$ go run server.go &
-
+$ go install github.com/akhilsurya/akhilsurya/cs733/assignment4
+$ go $GOBIN/assignment4
 ```
 ### The API
 | Command  | Success Response | Error Response
