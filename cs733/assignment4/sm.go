@@ -1,9 +1,8 @@
 package main
 
 import (
-	logger "log"
 	"math/rand"
-	"fmt"
+	"strconv"
 )
 
 type LogEntry struct {
@@ -51,6 +50,7 @@ func (sm *StateMachine) resetVotes() {
 
 }
 
+// Checks for win based on majority vote
 func (sm *StateMachine) hasWon() bool {
 	votesGranted := 0
 	for _, peer := range sm.peers {
@@ -95,7 +95,7 @@ func (sm *StateMachine) requestVote() []interface{} {
 			responses = append(responses, Send{peer, event})
 		}
 	}
-	logger.Println(sm.id, " :  Requesting for votes")
+	//logger.Println(sm.id, " : Requesting for votes for term : ", sm.term)
 	return responses
 }
 
@@ -174,7 +174,7 @@ func (sm *StateMachine) handleAppend(ev AppendEv) []interface{} {
 	responses := make([]interface{}, 0)
 	switch sm.state {
 	case 1, 2:
-		responses = append(responses, Commit{0, ev.data, "INCORRECT_HOST"})
+		responses = append(responses, Commit{0, ev.data, "INCORRECT_HOST "+strconv.Itoa(sm.leaderId)})
 	case 3:
 		newEntry := LogEntry{sm.term, ev.data}
 		responses = append(responses, LogStore{len(sm.log), sm.term, ev.data})
@@ -188,15 +188,16 @@ func (sm *StateMachine) handleTimeout(ev TimeoutEv) []interface{} {
 	responses := make([]interface{}, 0)
 	switch sm.state {
 	case 1, 2:
-		responses = append(responses, StateStore{sm.term + 1, sm.id})
 		sm.term++
 		sm.votedFor = sm.id
+		responses = append(responses, StateStore{sm.term, sm.votedFor})
 		sm.resetVotes()
 		sm.votes[sm.id] = 1
 		sm.state = 2
 		sm.leaderId = -1
-		responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
+		// Requesting for votes and setting alarm
 		responses = append(responses, sm.requestVote()...)
+		responses = append(responses, Alarm{sm.timeout})
 	case 3:
 		responses = append(responses, Alarm{sm.timeout})
 		responses = append(responses, sm.sendHeartBeat()...)
@@ -315,7 +316,7 @@ func (sm *StateMachine) handleVoteReq(ev VoteReqEv) []interface{} {
 					responses = append(responses, StateStore{sm.term, sm.votedFor})
 				}
 			} else {
-				logger.Println(sm.id, " : Vote given to ", ev.CandidateId)
+				//logger.Println(sm.id, " : Vote given to ", ev.CandidateId, " for term : ", ev.Term)
 				sm.votedFor = ev.CandidateId
 				responses = append(responses, Send{ev.CandidateId, VoteRespEv{sm.id, ev.Term, true}})
 				responses = append(responses, Alarm{random(sm.timeout, 2*sm.timeout)})
@@ -369,7 +370,7 @@ func (sm *StateMachine) handleVoteResp(ev VoteRespEv) []interface{} {
 				sm.votes[ev.PeerId] = 1
 
 				if sm.hasWon() {
-					fmt.Println(sm.id, " : ", sm.id, " has won ")
+					//logger.Println(sm.id, " : ", sm.id, " has won term ", sm.term)
 					sm.leaderId = sm.id
 					sm.state = 3
 					leaderLastIndex := len(sm.log)
@@ -383,7 +384,7 @@ func (sm *StateMachine) handleVoteResp(ev VoteRespEv) []interface{} {
 				sm.votes[ev.PeerId] = -1
 
 				if sm.hasLost() {
-					logger.Println(sm.id, " : ", sm.id, " has lost")
+					//logger.Println(sm.id, " : ", sm.id, " has lost term : ", sm.term)
 					sm.state = 1
 					sm.resetVotes()
 					// term and votedFor remain same

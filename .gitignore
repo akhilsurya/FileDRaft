@@ -4,8 +4,8 @@ cs733/assignment3/assignment3.iml
 cs733/assignment3/.idea/*
 cs733/assignment3/logs/*
 cs733/assignment3/*_state
-cs733/assignment3/assignment3.iml
 cs733/assignment4/.idea/*
 cs733/assignment4/logs/*
 cs733/assignment4/*_state
-cs733/assignment4/assignment3.iml
+cs733/assignment4/assignment4.iml
+./.gitignore~

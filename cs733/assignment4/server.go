@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
+	"github.com/akhilsurya/fs"
 	"net"
 	"os"
 	"strconv"
-	"github.com/akhilsurya/akhilsurya/assignment4/fs"
+	"math/rand"
+	"time"
 )
 
 var crlf = []byte{'\r', '\n'}
@@ -25,7 +26,7 @@ type ServerConfig struct {
 type FileServer struct {
 	rn         Node
 	nodeURLs   map[int]string
-	clientConn map[int]*net.TCPConn
+	clientConn map[string]*net.TCPConn
 	addr       string
 	port       int
 	id         int
@@ -67,7 +68,7 @@ func reply(conn *net.TCPConn, msg *fs.Msg) bool {
 	case 'L':
 		resp = string(msg.Contents)
 	default:
-		fmt.Printf("Unknown response kind '%c'", msg.Kind)
+		//fmt.Printf("Unknown response kind '%c'", msg.Kind)
 		return false
 	}
 	resp += "\r\n"
@@ -84,31 +85,31 @@ func (srvr *FileServer) serve(conn *net.TCPConn, clientID int) {
 	for {
 		msg, msgerr, fatalerr := fs.GetMsg(reader)
 		leader := srvr.rn.LeaderId()
-		if (leader != srvr.id) {
-			if (leader == -1) {
+		if leader != srvr.id {
+			//fmt.Println(srvr.id, " : To client ID ", msg, " : Not the Leader, sending an L ")
+			if leader == -1 {
 				// Don't know the leader
-				reply(conn, &fs.Msg{Kind:'L', Contents:[]byte("")})
+				//fmt.Println("Do not know the current leader")
+				reply(conn, &fs.Msg{Kind: 'L', Contents: []byte("ERR_REDIRECT _")})
 			} else {
-				content := []byte("ERR_REDIRECT "+ srvr.nodeURLs[leader])
-				reply(conn, &fs.Msg{Kind:'L', Contents:content, Numbytes:len(content)})
+				content := []byte("ERR_REDIRECT " + srvr.nodeURLs[leader])
+				//fmt.Println("Redirecting to correct URL : ",  srvr.nodeURLs[leader])
+				reply(conn, &fs.Msg{Kind: 'L', Contents: content, Numbytes: len(content)})
 			}
+			break
 		}
+
 		if fatalerr != nil || msgerr != nil {
 			reply(conn, &fs.Msg{Kind: 'M'})
 			conn.Close()
 			break
 		}
 		msg.ClientID = clientID
+		msg.ServerID = srvr.id
 		data, err := json.Marshal(msg)
-		fmt.Println("Marshalled data : ", string(data))
+		//fmt.Println("Marshalled data : ", string(data))
 		check(err)
 		srvr.rn.Append(data)
-		//if msgerr != nil {
-		//	if (!reply(conn, &fs.Msg{Kind: 'M'})) {
-		//		conn.Close()
-		//		break
-		//	}
-		//}
 
 	}
 }
@@ -120,27 +121,28 @@ func (srvr *FileServer) commitHandler() {
 			var msg fs.Msg
 			err := json.Unmarshal(commitInfo.Data, &msg)
 			check(err)
-			log.Println("Commit info from data with client data : ", msg.ClientID)
+			//log.Println(srvr.id, " : Commit info from data with client data : ", msg.ClientID)
 			response := fs.ProcessMsg(&msg)
-			log.Println("Commit info for request from: ", response.ClientID)
-			conn := srvr.clientConn[response.ClientID]
-			log.Println("Replying to : ", response.ClientID)
-			if !reply(conn, response) {
-				conn.Close()
-				break
+			//log.Println(srvr.id, " : Commit info for request from: ", concat(response.ServerID, response.ClientID))
+			if conn, ok := srvr.clientConn[concat(response.ServerID, response.ClientID)]; ok {
+				//log.Println(srvr.id, " : Replying to : ", response.ClientID)
+				if !reply(conn, response) {
+					//fmt.Println("Closing connection : ", concat(response.ServerID, response.ClientID))
+					conn.Close()
+					break
+				}
+			} else {
+				//fmt.Println("Trying to send from wrong server")
 			}
+
 		} else {
-			fmt.Println("NO ENTRY ZONE")
+			//fmt.Println("NO ENTRY ZONE : ", commitInfo.Err)
 		}
 	}
 }
 
 func (srvr *FileServer) shutdown() {
 	srvr.rn.Shutdown()
-	for id := range srvr.clientConn {
-		// attempt to close client connections. May have been closed already
-		_ = srvr.clientConn[id].Close()
-	}
 }
 
 // more of an init server
@@ -149,7 +151,7 @@ func serverMain(config ServerConfig) *FileServer {
 	check(err)
 	rn, err := New(config.nodeConfig)
 	check(err)
-	srvr := FileServer{rn, make(map[int]string), make(map[int]*net.TCPConn), config.addr, config.port, config.id}
+	srvr := FileServer{rn, make(map[int]string), make(map[string]*net.TCPConn), config.addr, config.port, config.id}
 	// Saving URLs of others for redirect
 	for _, srvrAddr := range config.srvrAddrs {
 		srvr.nodeURLs[srvrAddr.Id] = srvrAddr.Host + ":" + strconv.Itoa(srvrAddr.Port)
@@ -164,11 +166,61 @@ func serverMain(config ServerConfig) *FileServer {
 		for {
 			tcp_conn, err := tcp_acceptor.AcceptTCP()
 			check(err)
-			srvr.clientConn[clientID] = tcp_conn
-			fmt.Println("Saving conn corresponding to ", clientID)
+			srvr.clientConn[concat(srvr.id, clientID)] = tcp_conn
+			//fmt.Println("serving conn corresponding to ", clientID)
 			go srvr.serve(tcp_conn, clientID)
 			clientID++
 		}
 	}()
 	return &srvr
+}
+var servers map[int]*FileServer
+func start()  {
+	servers = make(map[int]*FileServer)
+
+	// Ports to communicate between RAFT nodes
+	cluster := []NetConfig{
+		NetConfig{100, "localhost", 8090},
+		NetConfig{200, "localhost", 8091},
+		NetConfig{300, "localhost", 8092},
+		NetConfig{400, "localhost", 8093},
+		NetConfig{500, "localhost", 8094},
+	}
+
+	// addresses for clients to communicate
+	srvrAddrs := []NetConfig{
+		NetConfig{100, "localhost", 8095},
+		NetConfig{200, "localhost", 8096},
+		NetConfig{300, "localhost", 8097},
+		NetConfig{400, "localhost", 8098},
+		NetConfig{500, "localhost", 8099},
+	}
+
+	for i := 1; i < 6; i++ {
+		id := 100 * i
+		nodeConfig := Config{cluster, id, "logs/" + strconv.Itoa(i*100), i * i * 10000, i * 100}
+		servers[id] = serverMain(ServerConfig{nodeConfig, srvrAddrs, srvrAddrs[i-1].Host, srvrAddrs[i-1].Port, id})
+	}
+	// Waiting for leader
+	time.Sleep(1 * time.Second)
+}
+
+func done() {
+	for i := range servers {
+		servers[i].shutdown()
+	}
+}
+
+func main() {
+	rand.Seed(123)
+	start()
+	defer done()
+	for {
+
+	}
+}
+
+
+func concat(a int, b int ) string {
+	return strconv.Itoa(a)+"_"+strconv.Itoa(b)
 }

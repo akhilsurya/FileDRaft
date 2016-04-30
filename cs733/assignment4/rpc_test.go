@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var servers map[int]*FileServer
+var srvrs map[int]*FileServer
 var srvrAddrs []NetConfig
 
 func shutdownAll() {
@@ -23,53 +23,55 @@ func shutdownAll() {
 }
 
 func initSystem() {
-	servers = make(map[int]*FileServer)
+	srvrs = make(map[int]*FileServer)
 	// Remove saved logs for new test
 	cleanUp()
 	// Ports to communicate between RAFT nodes
 	cluster := []NetConfig{
-		NetConfig{100, "localhost", 8080},
-		NetConfig{200, "localhost", 8081},
-		NetConfig{300, "localhost", 8082},
-		NetConfig{400, "localhost", 8083},
-		NetConfig{500, "localhost", 8084},
+		NetConfig{100, "localhost", 8090},
+		NetConfig{200, "localhost", 8091},
+		NetConfig{300, "localhost", 8092},
+		NetConfig{400, "localhost", 8093},
+		NetConfig{500, "localhost", 8094},
 	}
 
 	// addresses for clients to communicate
-	srvrAddrs = []NetConfig{
-		NetConfig{100, "localhost", 8085},
-		NetConfig{200, "localhost", 8086},
-		NetConfig{300, "localhost", 8087},
-		NetConfig{400, "localhost", 8088},
-		NetConfig{500, "localhost", 8089},
+	srvrAddrs := []NetConfig{
+		NetConfig{100, "localhost", 8095},
+		NetConfig{200, "localhost", 8096},
+		NetConfig{300, "localhost", 8097},
+		NetConfig{400, "localhost", 8098},
+		NetConfig{500, "localhost", 8099},
 	}
 
 	for i := 1; i < 6; i++ {
 		id := 100 * i
-		nodeConfig := Config{cluster, id, "logs/" + strconv.Itoa(i*100), i * i * 1000, i * 100}
-		servers[id] = serverMain(ServerConfig{nodeConfig, srvrAddrs, srvrAddrs[i-1].Host, srvrAddrs[i-1].Port, id})
+		nodeConfig := Config{cluster, id, "logs/" + strconv.Itoa(i*100), i * i * 10000, i * 100}
+		srvrs[id] = serverMain(ServerConfig{nodeConfig, srvrAddrs, srvrAddrs[i-1].Host, srvrAddrs[i-1].Port, id})
 	}
 	// Waiting for leader
 	time.Sleep(1 * time.Second)
 }
-
+// Assumes 400 is up
 func findLeader(t *testing.T) string {
 	for {
-		cl := mkClient(t, servers[400].addr+":"+strconv.Itoa(servers[400].port))
-
-		for {
-			m, _ := cl.read("NO_FILE")
-			if m.Kind == 'L' {
-				fmt.Println("Leader redirection")
-				// Redirect URL
-				url := string(m.Contents)
+		//fmt.Println(srvrs[400].addr+":"+strconv.Itoa(srvrs[400].port))
+		cl := mkClient(t, srvrs[400].addr+":"+strconv.Itoa(srvrs	[400].port))
+		defer cl.close()
+		m, _ := cl.read("NO_FILE")
+		if m.Kind == 'L' {
+			//fmt.Println("Got a reply of type L with URL : ", string(m.Contents))
+			url := string(m.Contents)
+			// Redirect URL
+			if url != "_" {
+				//fmt.Println("Settled for URL : ", url)
 				return url
-			} else if m.Kind == 'F' {
-				// This is the leader
-				return servers[400].addr+":"+strconv.Itoa(servers[400].port)
 			}
-			time.Sleep(200*time.Millisecond)
+		} else if m.Kind == 'F' {
+			// This is the leader
+			return srvrs[400].addr + ":" + strconv.Itoa(servers[400].port)
 		}
+		time.Sleep(1000 * time.Millisecond)
 	}
 }
 
@@ -97,7 +99,6 @@ func expectMessage(t *testing.T, response *Msg, expected *Msg, errstr string, er
 	}
 }
 
-
 func TestRPC_BasicSequential(t *testing.T) {
 	initSystem()
 	leaderURL := findLeader(t)
@@ -107,11 +108,10 @@ func TestRPC_BasicSequential(t *testing.T) {
 	// Read non-existent file cs733net
 	m, err := cl.read("cs733net")
 	expectMessage(t, m, &Msg{Kind: 'F'}, "file not found", err)
-	fmt.Println("Passed 1")
+
 	// Read non-existent file cs733net
 	m, err = cl.delete("cs733net")
 	expectMessage(t, m, &Msg{Kind: 'F'}, "file not found", err)
-	fmt.Println("Passed 2")
 	// Write file cs733net
 	data := "Cloud fun"
 	m, err = cl.write("cs733net", data, 0)
@@ -163,8 +163,6 @@ func TestRPC_Binary(t *testing.T) {
 	// Expect to read it back
 	m, err = cl.read("binfile")
 	expectMessage(t, m, &Msg{Kind: 'C', Contents: []byte(data)}, "read my write", err)
-
-
 
 }
 
@@ -241,7 +239,7 @@ func TestRPC_BasicTimer(t *testing.T) {
 	expectMessage(t, m, &Msg{Kind: 'O'}, "file recreated", err)
 
 	// Overwrite the file with expiry time of 4. This should be the new time.
-	m, err = cl.write("cs733", str, 3)
+	m, err = cl.write("cs733", str, 4)
 	expectMessage(t, m, &Msg{Kind: 'O'}, "file overwriten with exptime=4", err)
 
 	// The last expiry time was 3 seconds. We should expect the file to still be around 2 seconds later
@@ -297,40 +295,38 @@ func TestRPC_ConcurrentWrites(t *testing.T) {
 	sem.Add(1)
 	ch := make(chan *Msg, nclients*niters) // channel for all replies
 	for i := 0; i < nclients; i++ {
-		go func(i int, cl *Client) {
+		go func(i int, clt *Client) {
 			sem.Wait()
+			cl := clt
 			for j := 0; j < niters; j++ {
-				fmt.Println("Starting : ", i, " : ", j)
+				//fmt.Println("Starting : ", i, " : ", j)
 				str := fmt.Sprintf("cl %d %d", i, j)
-				fmt.Println("Contents to be written : ", str)
-				for {
-					m, err := cl.write("concWrite", str, 0)
-					if m.Kind == 'L' {
-						fmt.Println("Leader redirection")
-						// Redirect URL
-						url := string(m.Contents)
-						cl = mkClient(t, url)
-					} else {
-						if err != nil {
-							errCh <- err
-						} else {
-							fmt.Println("Reached the right spot")
-							ch <- m
-						}
-						break
-					}
+				//fmt.Println("Contents to be written : ", str)
+
+				var m *Msg
+				var err error
+				cl, m, err = retryWrite(t, cl, "concWrite", str, 0)
+				//defer cl.close()
+				if err != nil {
+					errCh <- err
+				} else {
+					//fmt.Println("Wrote without an error")
+					ch <- m
 				}
+
+
 			}
+			//fmt.Println("Client number ", i, " done.")
 		}(i, clients[i])
 	}
 	time.Sleep(5000 * time.Millisecond) // give goroutines a chance
 	sem.Done()                          // Go!
-	fmt.Println("Go !")
+
 	// There should be no errors
 	for i := 0; i < nclients*niters; i++ {
 		select {
 		case m := <-ch:
-			fmt.Println("Done with : ", i, string(m.Contents))
+			//fmt.Println("Done with : ", i, string(m.Contents))
 			if m.Kind != 'O' {
 				t.Fatalf("Concurrent write failed with kind=%c", m.Kind)
 			}
@@ -338,23 +334,24 @@ func TestRPC_ConcurrentWrites(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	m, _ := clients[0].read("concWrite")
+	cl := mkClient(t, leaderURL)
+	m, _ := cl.read("concWrite")
+	//fmt.Println("Error while reading after all writes : ", err)
 	// Ensure the contents are of the form "cl <i> 9"
 	// The last write of any client ends with " 9"
-	fmt.Println("Content finally read : ", string(m.Contents))
+	//fmt.Println("Content finally read : ", string(m.Contents))
+	//fmt.Println("Final Message kind for concurrent writes : ", m)
 	if !(m.Kind == 'C' && strings.HasSuffix(string(m.Contents), " 4")) {
-		t.Fatalf("Expected to be able to read after 15 writes. Got msg = %v", m)
+		t.Fatalf("Expected to be able to read after 15 writes. Got msg ", m.Kind, " ", string(m.Contents))
 	}
-	shutdownAll()
-	fmt.Println("All done!")
-}
 
+}
 
 // nclients cas to the same file. At the end the file should be any one clients' last write.
 // The only difference between this test and the ConcurrentWrite test above is that each
 // client loops around until each CAS succeeds. The number of concurrent clients has been
 // reduced to keep the testing time within limits.
-func PTestRPC_ConcurrentCas(t *testing.T) {
+func TestRPC_ConcurrentCas(t *testing.T) {
 	nclients := 3
 	niters := 5
 	leaderURL := findLeader(t)
@@ -389,7 +386,10 @@ func PTestRPC_ConcurrentCas(t *testing.T) {
 			for j := 0; j < niters; j++ {
 				str := fmt.Sprintf("cl %d %d", i, j)
 				for {
-					m, err := cl.cas("concCas", ver, str, 0)
+					var m *Msg
+					var err error
+					cl, m, err = retryCAS(t, cl, "concCas", ver, str, 0)
+					//defer cl.close()
 					if err != nil {
 						errorCh <- err
 						return
@@ -409,35 +409,86 @@ func PTestRPC_ConcurrentCas(t *testing.T) {
 	sem.Done()                         // Start goroutines
 	wg.Wait()                          // Wait for them to finish
 	select {
-	case e := <- errorCh:
+	case e := <-errorCh:
 		t.Fatalf("Error received while doing cas: %v", e)
 	default: // no errors
 	}
-	m, _ = clients[0].read("concCas")
-	if !(m.Kind == 'C' && strings.HasSuffix(string(m.Contents), " 9")) {
+	cl := mkClient(t, leaderURL)
+	m, _ = cl.read("concCas")
+	//fmt.Println("Error in reading finnally : ", err)
+	//fmt.Println("Final Message kind for concurrent CAS : ", m)
+	if !(m.Kind == 'C' && strings.HasSuffix(string(m.Contents), " 4")) {
 		t.Fatalf("Expected to be able to read after 1000 writes. Got msg.Kind = %d, msg.Contents=%s", m.Kind, m.Contents)
 	}
+
+}
+
+func TestRPC_KillLeader(t *testing.T) {
+	leaderURL := findLeader(t)
+	cl := mkClient(t, leaderURL)
+	defer cl.close()
+	str := "Cloud fun"
+	m, err := cl.write("killLeader", str, 0)
+	expectMessage(t, m, &Msg{Kind: 'O'}, "write success", err)
+
+	//Wait for commits to propogate
+	time.Sleep(2*time.Second)
+
+	//fmt.Println("Shutting down the leader now")
+	srvrs[100].shutdown()
+	//fmt.Println("Done shutting down")
+	time.Sleep(120*time.Second)
+	// Wait fot things to settle up
+	//fmt.Println("Reached here")
+	leaderURL = findLeader(t)
+	//fmt.Println("New leader : ", leaderURL)
+	cl2 := mkClient(t, leaderURL)
+	m, err = cl2.read("killLeader")
+	expectMessage(t, m, &Msg{Kind: 'C', Contents: []byte(str)}, "read my write", err)
+	//shutdownAll()
+	srvrs[200].shutdown()
+	srvrs[300].shutdown()
+	srvrs[400].shutdown()
+	srvrs[500].shutdown()
+	//fmt.Println("All done!")
 }
 
 
-func retry(t *testing.T, client ) {
+// Client side Retryable CAS request. Use the client variable returned for further requests
+func retryCAS(t *testing.T, cl *Client, file string, version int, contents string, exptime int) (*Client, *Msg, error) {
 	for {
-		cl := mkClient(t, servers[400].addr+":"+strconv.Itoa(servers[400].port))
-
-		for {
-			m, _ := cl.read("NO_FILE")
-			if m.Kind == 'L' {
-				fmt.Println("Leader redirection")
-				// Redirect URL
-				url := string(m.Contents)
-				cl = mkClient(t, )
-			} else if m.Kind == 'F' {
-				// This is the leader
-				return servers[400].addr+":"+strconv.Itoa(servers[400].port)
+		m, err := cl.cas(file, version, contents, exptime)
+		if m.Kind == 'L' {
+			leaderURL := string(m.Contents)
+			if leaderURL != "_" {
+				cl.close()
+				cl = mkClient(t, leaderURL)
 			}
-			time.Sleep(200*time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
+		} else {
+			return cl, m, err
 		}
+
 	}
+}
+
+// Client side Retryable Write request. Use the client variable returned for further requests
+func retryWrite(t *testing.T, cl *Client, file string, contents string, exptime int) (*Client, *Msg, error) {
+	for {
+		m, err := cl.write(file, contents, exptime)
+		if m.Kind == 'L' {
+			leaderURL := string(m.Contents)
+			if leaderURL != "_" {
+				cl.close()
+				cl = mkClient(t, leaderURL)
+			}
+			time.Sleep(50 * time.Millisecond)
+		} else {
+			return cl, m, err
+		}
+
+	}
+
 }
 
 //----------------------------------------------------------------------

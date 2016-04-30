@@ -2,13 +2,13 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
+	"fmt"
 )
 
 func cleanUp() {
@@ -65,17 +65,16 @@ func TestRaft1(t *testing.T) {
 	cleanUp()
 	rafts := initRaft()
 	time.Sleep(7 * time.Second)
-	fmt.Println("Done sleeping1")
 	leader := -1
 	leaderIndex := -1
 	for i := 0; i < 5; i++ {
 		if rafts[i].LeaderId() != -1 && leader == -1 {
 			leader = rafts[i].LeaderId()
 			leaderIndex = i
-			fmt.Printf("Found leader : %d\n", (i+1)*100)
+			//fmt.Printf("Found leader : %d\n", (i+1)*100)
 		}
 	}
-	fmt.Println("Leader is ", leader)
+	//fmt.Println("Leader is ", leader)
 	rafts[leaderIndex].Append([]byte("Testing"))
 	resp := <-rafts[leaderIndex].CommitChannel()
 	expect(t, resp.Index, 0)
@@ -94,7 +93,7 @@ func TestRaft1(t *testing.T) {
 	for i := 1; i < 5; i++ {
 		if rafts[i].LeaderId() != -1 {
 			leader = rafts[i].LeaderId()
-			fmt.Printf("Found leader2 : %d\n", (i+1)*100)
+			//fmt.Printf("Found leader2 : %d\n", (i+1)*100)
 		}
 	}
 
@@ -115,10 +114,10 @@ func TestRaft3(t *testing.T) {
 		if rafts[i].LeaderId() != -1 && leader == -1 {
 			leader = rafts[i].LeaderId()
 			leaderIndex = i
-			fmt.Printf("Found leader : %d\n", (i+1)*100)
+			//fmt.Printf("Found leader : %d\n", (i+1)*100)
 		}
 	}
-	fmt.Println("Leader is ", leader)
+	//fmt.Println("Leader is ", leader)
 	rafts[leaderIndex].Append([]byte("Testing"))
 	resp := <-rafts[leaderIndex].CommitChannel()
 
@@ -139,15 +138,14 @@ func TestRaft3(t *testing.T) {
 		if rafts[i].LeaderId() != -1 && leader == -1 {
 			leader = rafts[i].LeaderId()
 			leaderIndex = i
-			fmt.Printf("Found leader : %d\n", (i+1)*100)
+			//fmt.Printf("Found leader : %d\n", (i+1)*100)
 		}
 	}
-	fmt.Println("Leader after few shutdowns is : ", leader)
+	//fmt.Println("Leader after few shutdowns is : ", leader)
 	rafts[leaderIndex].Append([]byte("Testing2"))
-	fmt.Println("")
 	resp = <-rafts[leaderIndex].CommitChannel()
 	// Index should continue
-	fmt.Println("Receied commit response")
+	//fmt.Println("Receied commit response")
 	expect(t, resp.Index, 1)
 	err, found = rafts[leaderIndex].Get(1)
 	matchBytes(t, found, resp.Data)
@@ -157,55 +155,6 @@ func TestRaft3(t *testing.T) {
 		rafts[i].Shutdown()
 	}
 }
-
-//// Send a message before leader gets elected and check for error
-//func TestRaft2(t *testing.T) {
-//	cleanUp()
-//	rafts := initRaft()
-//	time.Sleep(1*time.Second)
-//	rafts[0].Append([]byte("Testing"))
-//	resp := <-rafts[0].CommitChannel()
-//	assertNotEqual(t, resp.Index, 1)
-//
-//	if(resp.Err == errors.New("INCORRECT_HOST")) {
-//		t.Error(fmt.Sprintf("The host should not have accepted the reuqest"))
-//	}
-//	fmt.Println("Tested incorrect leader messaging")
-//	time.Sleep(7*time.Second)
-//	fmt.Println("Leader should have gotten elected")
-//	leader := -1
-//	leaderIndex := -1
-//	for i :=0; i< 5; i++ {
-//		if rafts[i].LeaderId() != -1 && leader == -1{
-//			leader = rafts[i].LeaderId()
-//			leaderIndex = i
-//			fmt.Printf("Found leader : %d", (i+1)*100)
-//		}
-//	}
-//	fmt.Println("Leader is ", leader)
-//	rafts[leaderIndex].Append([]byte("Testing1"))
-//	rafts[leaderIndex].Append([]byte("Testing2"))
-//	resp1 := <-rafts[leaderIndex].CommitChannel()
-//	fmt.Println("One response recieved")
-//	resp2 := <-rafts[leaderIndex].CommitChannel()
-//	fmt.Println("Found : ", string(resp1.Data))
-//	expect(t, resp1.Index,0)
-//	err, found := rafts[leaderIndex].Get(0)
-//	matchBytes(t, found, resp1.Data)
-//	expectTruth(t, err == nil)
-//	fmt.Println("RESP2 : ", resp2)
-//	//expect(t, resp2.Index, 1)
-//
-//	//err, found = rafts[leaderIndex].Get(1)
-//	//matchBytes(t, found, resp2.Data)
-//	//expectTruth(t, err == nil)
-//	fmt.Println("Waiting for committing the entries")
-//
-//	for i := 0; i < 5; i++ {
-//		rafts[i].Shutdown()
-//	}
-//
-//}
 
 func matchBytes(t *testing.T, a []byte, b []byte) {
 	if !bytes.Equal(a, b) {

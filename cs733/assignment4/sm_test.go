@@ -27,10 +27,11 @@ func Test1(t *testing.T) {
 	// Timeout event
 	responses := sm.ProcessEvent(TimeoutEv{})
 	expected = append(expected, StateStore{1, 0})
-	expected = append(expected, Alarm{230}) // time does not matter
+
 	for i := 1; i < 5; i++ {
 		expected = append(expected, Send{i, VoteReqEv{sm.id, 1, 0, 0}})
 	}
+	expected = append(expected, Alarm{230}) // time does not matter
 	matchResponse(t, expected, responses)
 	// Should be candidate
 	expect(t, sm.state, 2)
@@ -58,7 +59,6 @@ func Test1(t *testing.T) {
 	expect(t, sm.state, 3)
 	// Check heartbeats etc. are sent
 	expected = make([]interface{}, 0)
-	// TODO : Order shold not matter
 	for i := range sm.peers {
 		if i != sm.id {
 			expected = append(expected, Send{i, AppendEntriesReqEv{sm.id, sm.term, 0, 0, make([]LogEntry, 0), 0}})
@@ -66,7 +66,7 @@ func Test1(t *testing.T) {
 	}
 	expected = append(expected, Alarm{200})
 	matchResponse(t, expected, responses)
-	// Should gnore vote from 4
+	// Should ignore vote from 4
 	responses = sm.ProcessEvent(VoteRespEv{4, 1, true})
 	expected = make([]interface{}, 0)
 	matchResponse(t, expected, responses)
@@ -84,19 +84,12 @@ func Test1(t *testing.T) {
 	}
 	matchResponse(t, expected, responses)
 	expect(t, len(sm.log), 2)
-	// Gain positive response one, should not be commited
+	// Gain positive response one, should not have committed after this
 	responses = sm.ProcessEvent(AppendEntriesRespEv{2, 1, true, 1})
 	expected = make([]interface{}, 0)
 	expect(t, sm.matchIndex[2], 1) // Append worked
 	matchResponse(t, expected, responses)
 	expect(t, sm.commitIndex, 0)
-	//Send the heart beats responses in now i.e. out of order for 2
-	for i := 1; i < 5; i++ {
-		responses = sm.ProcessEvent(AppendEntriesRespEv{i, 1, true, 0})
-	}
-	// No commit response
-	matchResponse(t, expected, responses)
-	expect(t, 1, sm.matchIndex[2]) // should not have reverted back
 
 	// Return majority responses by getting a positive reply from 1
 	responses = sm.ProcessEvent(AppendEntriesRespEv{1, 1, true, 1})
@@ -116,12 +109,13 @@ func Test2(t *testing.T) {
 	responses := sm.ProcessEvent(TimeoutEv{})
 	expected := make([]interface{}, 0)
 	expected = append(expected, StateStore{1, 2})
-	expected = append(expected, Alarm{230}) // time wouldn't be matched
+
 	for i := 0; i < 5; i++ {
 		if i != 2 {
 			expected = append(expected, Send{i, VoteReqEv{sm.id, 1, 0, 0}})
 		}
 	}
+	expected = append(expected, Alarm{230}) // time wouldn't be matched
 	expect(t, sm.state, 2)
 	expect(t, sm.term, 1)
 	expect(t, sm.votedFor, 2)
@@ -169,12 +163,13 @@ func Test2(t *testing.T) {
 	responses = sm.ProcessEvent(TimeoutEv{})
 	expected = make([]interface{}, 0)
 	expected = append(expected, StateStore{2, 2})
-	expected = append(expected, Alarm{200})
+
 	for _, peer := range sm.peers {
 		if peer != 2 {
 			expected = append(expected, Send{peer, VoteReqEv{2, 2, 1, 1}})
 		}
 	}
+	expected = append(expected, Alarm{200})
 	expect(t, sm.state, 2)
 	expect(t, sm.votedFor, 2)
 	matchResponse(t, expected, responses)
