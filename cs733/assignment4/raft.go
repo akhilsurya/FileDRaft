@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"sync"
+
 )
 
 type CommitInfo struct {
@@ -201,7 +202,7 @@ func (rn *RaftNode) resetTimer(timeout int) {
 }
 
 func (rn *RaftNode) handleSMResponses(resp []interface{}) {
-	////logger.Println(rn.Id(), " : Processing ", len(resp), " responses")
+	//logger.Println(rn.Id(), " : Processing ", len(resp), " responses")
 	for _, ev := range resp {
 		////logger.Println(rn.Id(), " : ", ev)
 		switch ev.(type) {
@@ -221,6 +222,7 @@ func (rn *RaftNode) handleSMResponses(resp []interface{}) {
 			comm := ev.(Commit)
 
 			var cm CommitInfo
+			//fmt.Println("Commited")
 			if comm.err != "" {
 				// -1 to match the ignore the dummy
 				cm = CommitInfo{Data: comm.data, Index: comm.index - 1, Err: errors.New(comm.err)}
@@ -234,7 +236,9 @@ func (rn *RaftNode) handleSMResponses(resp []interface{}) {
 			rn.resetTimer(alarm.t)
 			////logger.Println(rn.Id(), " : Timer reset done ")
 		case LogStore:
+
 			logRequest := ev.(LogStore)
+			//fmt.Println("Saving : ",  string(logRequest.data))
 			////logger.Println(rn.Id() , " : Trying to store ", string(logRequest.data))
 			lastIndex := rn.lg.GetLastIndex()
 			//logger.Println(rn.Id(), " : Last Index before inserting is ", lastIndex)
@@ -271,10 +275,10 @@ func (rn *RaftNode) ProcessEvents() {
 		case ev, ok := <-rn.eventChannel:
 			if ok {
 				//rn.commitLock.Lock()
-				//logger.Println(rn.Id(), " : New event in channel")
+				//logger.Println(rn.Id(), " : New event in channel : ", ev)
 				resp := rn.sm.ProcessEvent(ev)
 				//rn.commitLock.Unlock()
-				////logger.Println(rn.Id(), " : Got responses" )
+				//logger.Println(rn.Id(), " : Got responses" )
 				rn.handleSMResponses(resp)
 			} else {
 				//logger.Println(rn.Id(), " : Stopped processing")

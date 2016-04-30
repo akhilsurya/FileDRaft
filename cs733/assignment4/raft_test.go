@@ -3,20 +3,11 @@ package main
 import (
 	"bytes"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 	"fmt"
 )
-
-func cleanUp() {
-	removeContents("logs")
-	for i := 1; i < 6; i++ {
-		os.Remove(strconv.Itoa(i*100) + "_state")
-	}
-}
 
 func initRaft() []Node {
 	rand.Seed(4)
@@ -39,25 +30,6 @@ func initRaft() []Node {
 	return rafts
 }
 
-// Ref : http://stackoverflow.com/questions/33450980/golang-remove-all-contents-of-a-directory
-func removeContents(dir string) error {
-	d, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-	names, err := d.Readdirnames(-1)
-	if err != nil {
-		return err
-	}
-	for _, name := range names {
-		err = os.RemoveAll(filepath.Join(dir, name))
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // Send a message to the leader and check for commit
 // Also leader going down and someone else getting elected
