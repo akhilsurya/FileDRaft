@@ -1,12 +1,12 @@
-# akhilsurya
+# FileDRaft
 
-This is a consistent, replicated file system that uses the RAFT consensus protocol for log sharing.
+This is a consistent, replicated file storage that uses the RAFT consensus protocol for log sharing between servers.
 - Read a particular file
 - Write to it and get the current version
 - Compare and Swap contents(CAS) by giving the correct(current) version number of the file
 - Delete a particular file.
  
-The files can be made to expire after a given amount of time specified during writes  or made to stay forever.
+The files can also be made to expire after a given amount of time specified during writes.
 ### Sample Usage
 
 ``` sh
